@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Game</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(to bottom, #87CEFA, #2E8B57); /* Langit ke hijau */
+        }
+
+        canvas {
+            border: 2px solid black;
+            background: #B0E57C; /* Warna tanah */
+        }
+
+        #loginScreen input {
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        #loginScreen button {
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #leaderboard {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #leaderboard ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        #leaderboard li {
+            font-size: 18px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;">
+        <h1>Login to Play</h1>
+        <input type="text" id="usernameInput" placeholder="Enter your username" />
+        <button onclick="login()">Login</button>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" width="800" height="400" style="display:none;"></canvas>
+
+    <!-- Leaderboard -->
+    <div id="leaderboard">
+        <h1>Leaderboard</h1>
+        <ul id="leaderboardList"></ul>
+        <button id="restartButton" style="display:none;" onclick="restartGame()">Restart</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let carImage = new Image();
+        carImage.src = 'car.png';  // Ganti dengan URL gambar mobil
+
+        let coinImage = new Image();
+        coinImage.src = 'coin.png';  // Ganti dengan URL gambar koin
+
+        let fuelImage = new Image();
+        fuelImage.src = 'fuel.png';  // Ganti dengan URL gambar fuel pack
+
+        // Posisi dan kecepatan mobil
+        let car = {
+            x: 0,      
+            y: 250,    
+            speedY: 0, 
+            speedX: 0, 
+            gravity: 0.5,
+            isOnGround: false
+        };
+
+        let keys = { left: false, right: false };
+        let roadPoints = [];
+        let coins = [];
+        let fuelPacks = [];
+        let fuel = 100;
+        let collectedCoins = 0;
+        let leaderboard = [];
+        let username = "";
+        let gameOver = false;
+
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'ArrowLeft') keys.left = true;
+            if (event.code === 'ArrowRight') keys.right = true;
+        });
+
+        document.addEventListener('keyup', function(event) {
+            if (event.code === 'ArrowLeft') keys.left = false;
+            if (event.code === 'ArrowRight') keys.right = false;
+        });
+
+        function login() {
+            const usernameInput = document.getElementById('usernameInput').value;
+            if (usernameInput) {
+                username = usernameInput;
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('gameCanvas').style.display = 'block';
+                gameLoop();
+            } else {
+                alert("Please enter a username!");
+            }
+        }
+
+        function generateRoad() {
+            let x = 0;
+            let y = 300;
+            roadPoints.push({ x: x, y: y });
+
+            while (x < 3000) {
+                x += Math.random() * 100 + 50;
+                y = 300 + Math.sin(x * 0.005) * 100;
+                roadPoints.push({ x: x, y: y });
+            }
+        }
+
+        function getRoadY(x) {
+            for (let i = 0; i < roadPoints.length - 1; i++) {
+                if (x >= roadPoints[i].x && x <= roadPoints[i + 1].x) {
+                    let t = (x - roadPoints[i].x) / (roadPoints[i + 1].x - roadPoints[i].x);
+                    return roadPoints[i].y * (1 - t) + roadPoints[i + 1].y * t;
+                }
+            }
+            return 400;
+        }
+
+        function drawRoad() {
+            ctx.fillStyle = 'green';
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height);
+            for (let i = 0; i < roadPoints.length; i++) {
+                ctx.lineTo(roadPoints[i].x - car.x + 200, roadPoints[i].y);
+            }
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawCar() {
+            ctx.drawImage(carImage, 200 - 25, car.y - 15, 50, 30);
+        }
+
+        function updateCar() {
+            car.speedY += car.gravity;
+            if (keys.left) car.speedX -= 0.1;
+            if (keys.right) car.speedX += 0.1;
+
+            car.x += car.speedX;
+            car.y += car.speedY;
+
+            let roadY = getRoadY(car.x);
+            if (car.y > roadY - 15) {
+                car.y = roadY - 15;
+                car.speedY = 0;
+                car.isOnGround = true;
+            } else {
+                car.isOnGround = false;
+            }
+
+            if (car.isOnGround) car.speedX *= 0.9;
+            else car.speedX *= 0.99;
+        }
+
+        function generateCoins() {
+            for (let i = 0; i < 20; i++) {
+                let x = Math.random() * 2800 + 200;
+                let y = getRoadY(x) - 20 - Math.random() * 20;
+                coins.push({ x: x, y: y, collected: false });
+            }
+        }
+
+        function drawCoins() {
+            for (let i = 0; i < coins.length; i++) {
+                if (!coins[i].collected) {
+                    ctx.drawImage(coinImage, coins[i].x - car.x + 200 - 10, coins[i].y - 10, 20, 20);
+                }
+            }
+        }
+
+        function checkCoinCollection() {
+            for (let i = 0; i < coins.length; i++) {
+                let dx = coins[i].x - car.x;
+                let dy = coins[i].y - car.y;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < 25 && !coins[i].collected) {
+                    coins[i].collected = true;
+                    collectedCoins++;
+                }
+            }
+        }
+
+        function generateFuelPacks() {
+            for (let i = 0; i < 5; i++) {
+                let x = Math.random() * 2800 + 200;
+                let y = getRoadY(x) - 10 - Math.random() * 50;
+                fuelPacks.push({ x: x, y: y, collected: false });
+            }
+        }
+
+        function drawFuelPacks() {
+            for (let i = 0; i < fuelPacks.length; i++) {
+                if (!fuelPacks[i].collected) {
+                    ctx.drawImage(fuelImage, fuelPacks[i].x - car.x + 200 - 10, fuelPacks[i].y - 10, 20, 20);
+                }
+            }
+        }
+
+        function checkFuelCollection() {
+            for (let i = 0; i < fuelPacks.length; i++) {
+                let dx = fuelPacks[i].x - car.x;
+                let dy = fuelPacks[i].y - car.y;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < 25 && !fuelPacks[i].collected) {
+                    fuelPacks[i].collected = true;
+                    fuel += 50;
+                    if (fuel > 100) fuel = 100;
+                }
+            }
+        }
+
+        function drawFuel() {
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Fuel: ${Math.floor(fuel)}`, 10, 30);
+        }
+
+        function updateFuel() {
+         fuel -= 0.05;
+        if (fuel <= 0) {
+            fuel = 0;
+         car.speedX = 0;
+
+        if (!gameOver) {  // Pastikan updateLeaderboard dan showLeaderboard hanya dipanggil sekali
+            updateLeaderboard();
+            showLeaderboard();
+            showRestartButton();  // Tampilkan tombol restart
+            gameOver = true;  // Tandai permainan selesai
+         }
+        }
+    }
+        function showRestartButton() {
+        document.getElementById('restartButton').style.display = 'block';
+        }
+        function restartGame() {
+        // Reset variabel
+        car = { x: 0, y: 250, speedY: 0, speedX: 0, gravity: 0.5, isOnGround: false };
+        fuel = 100;
+        coins.forEach(coin => coin.collected = false);  // Reset status koin
+        fuelPacks.forEach(pack => pack.collected = false);  // Reset status fuel pack
+        gameOver = false;
+
+        // Sembunyikan leaderboard dan tombol restart
+        document.getElementById('leaderboard').style.display = 'none';
+        document.getElementById('restartButton').style.display = 'none';
+        document.getElementById('gameCanvas').style.display = 'block';
+
+    // Mulai ulang game loop
+    requestAnimationFrame(gameLoop);
+}
+        function updateLeaderboard() {
+            leaderboard.push({ username: username, score: Math.floor(fuel) + collectedCoins * 10 });
+            leaderboard.sort((a, b) => b.score - a.score);
+
+            let leaderboardList = document.getElementById('leaderboardList');
+            leaderboardList.innerHTML = '';
+
+            leaderboard.forEach((entry, index) => {
+                let li = document.createElement('li');
+                li.textContent = `${index + 1}. ${entry.username} - ${entry.score} points`;
+                leaderboardList.appendChild(li);
+            });
+        }
+
+        function showLeaderboard() {
+            document.getElementById('gameCanvas').style.display = 'none';
+            document.getElementById('leaderboard').style.display = 'block';
+        }
+
+        function gameLoop() {
+    if (!gameOver) {  // Tambahkan pengecekan agar loop berhenti jika permainan sudah selesai
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawRoad();
+        drawCar();
+        drawCoins();
+        drawFuelPacks();
+        drawFuel();
+
+        updateCar();
+        updateFuel();
+
+        checkCoinCollection();
+        checkFuelCollection();
+
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+        // Inisialisasi game saat pertama kali dimulai
+        generateRoad();
+        generateCoins();
+        generateFuelPacks();
+        gameLoop();
+    </script>
+</body>
+</html>
